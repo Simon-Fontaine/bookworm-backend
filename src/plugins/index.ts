@@ -20,19 +20,16 @@ export async function registerPlugins(server: FastifyInstance) {
     credentials: true,
   });
 
+  // Redis
+  await server.register(fastifyRedis, {
+    url: config.REDIS_URL,
+  });
+
   // Rate limiting
   await server.register(fastifyRateLimit, {
     max: 100,
     timeWindow: "1 minute",
-    redis: {
-      host: "localhost",
-      port: 6379,
-    },
-  });
-
-  // Redis
-  await server.register(fastifyRedis, {
-    url: config.REDIS_URL,
+    redis: server.redis,
   });
 
   // JWT
