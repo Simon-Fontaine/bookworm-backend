@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ListType {
+  WANT_TO_READ
+  CURRENTLY_READING
+  READ
+  FAVORITES
+}
+
+enum BookCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+}
+
+enum VerificationType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  ACCOUNT_DELETION
+  EMAIL_CHANGE
+}
+
+model User {
+  id              String   @id @default(uuid())
+  username        String   @unique
+  email           String   @unique
+  pendingEmail    String?
+  password        String
+  roles           Role[]   @default([USER])
+  displayName     String?
+  fullName        String?
+  bio             String?
+  avatarUrl       String?
+  location        String?
+  isEmailVerified Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  sessions      Session[]
+  verifications Verification[]
+  books         UserBook[]
+  goals         ReadingGoal[]
+  boxes         BookBox[]
+  reviews       Review[]
+  followers     Follow[]       @relation("UserFollowers")
+  following     Follow[]       @relation("UserFollowing")
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  csrfSecret String?
+  ipAddress  String?
+  location   String?
+  device     String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Verification {
+  id        String           @id @default(uuid())
+  userId    String
+  token     String           @unique
+  type      VerificationType
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verifications")
+}
+
+model Book {
+  id            String    @id @default(uuid())
+  googleId      String    @unique
+  title         String
+  authors       String[]
+  description   String?
+  thumbnailUrl  String?
+  publishedDate DateTime?
+  pageCount     Int?
+  categories    String[]
+  isbn10        String?
+  isbn13        String?
+  language      String    @default("en")
+  averageRating Float?
+  ratingsCount  Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  users    UserBook[]
+  boxBooks BoxBook[]
+  reviews  Review[]
+
+  @@map("books")
+}
+
+model UserBook {
+  id           String    @id @default(uuid())
+  userId       String
+  bookId       String
+  listType     ListType
+  rating       Int?      @db.SmallInt
+  notes        String?
+  review       String?
+  currentPage  Int?
+  progress     Float?    @db.Real // percentage 0-100
+  dateStarted  DateTime?
+  dateFinished DateTime?
+  isFavorite   Boolean   @default(false)
+  isPublic     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("user_books")
+}
+
+model ReadingGoal {
+  id           String   @id @default(uuid())
+  userId       String
+  year         Int
+  targetBooks  Int
+  currentBooks Int      @default(0)
+  targetPages  Int?
+  currentPages Int?     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year])
+  @@map("reading_goals")
+}
+
+model BookBox {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  latitude    Float
+  longitude   Float
+  address     String
+  accessHours String?
+  rules       String?
+  contactInfo String?
+  imageUrls   String[] @default([])
+  isActive    Boolean  @default(true)
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  creatorId   String
+
+  creator    User          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  books      BoxBook[]
+  activities BoxActivity[]
+
+  @@map("book_boxes")
+}
+
+model BoxBook {
+  id          String        @id @default(uuid())
+  boxId       String
+  bookId      String
+  donorId     String
+  condition   BookCondition @default(GOOD)
+  notes       String?
+  isAvailable Boolean       @default(true)
+  dateAdded   DateTime      @default(now())
+  dateTaken   DateTime?
+  takenById   String?
+
+  box  BookBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+  book Book    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@map("box_books")
+}
+
+model BoxActivity {
+  id           String   @id @default(uuid())
+  boxId        String
+  userId       String
+  bookId       String?
+  activityType String // 'book_added', 'book_taken', 'box_created', etc.
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  box BookBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+
+  @@map("box_activities")
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  userId       String
+  bookId       String
+  rating       Int      @db.SmallInt
+  content      String?
+  isPublic     Boolean  @default(true)
+  helpfulCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("reviews")
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("UserFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("follows")
+}
