@@ -16,7 +16,7 @@ declare module "@fastify/jwt" {
   }
 }
 
-export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+export async function requireAuth(request: FastifyRequest, _reply: FastifyReply) {
   try {
     const token = request.cookies.token || request.headers.authorization?.replace("Bearer ", "");
 
@@ -39,7 +39,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
   }
 }
 
-export async function optionalAuth(request: FastifyRequest, reply: FastifyReply) {
+export async function optionalAuth(request: FastifyRequest, _reply: FastifyReply) {
   try {
     const token = request.cookies.token || request.headers.authorization?.replace("Bearer ", "");
 

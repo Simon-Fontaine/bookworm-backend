@@ -6,7 +6,20 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyRedis from "@fastify/redis";
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifySchemaCompiler } from "fastify";
+import { ZodError, ZodType } from "zod";
+
+const zodValidatorCompiler: FastifySchemaCompiler<ZodType> = ({ schema }) => {
+  return (data: unknown) => {
+    const result = (schema as ZodType).safeParse(data);
+    if (result.success) {
+      return { value: result.data };
+    }
+    const error = result.error as ZodError & { statusCode?: number };
+    error.statusCode = 400;
+    return { error };
+  };
+};
 
 export async function registerPlugins(server: FastifyInstance) {
   // Security
@@ -50,4 +63,7 @@ export async function registerPlugins(server: FastifyInstance) {
       fileSize: 10 * 1024 * 1024, // 10MB
     },
   });
+
+  // Use Zod for validation
+  server.setValidatorCompiler(zodValidatorCompiler);
 }
