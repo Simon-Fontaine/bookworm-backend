@@ -10,8 +10,8 @@ export default async function searchRoutes(server: FastifyInstance) {
       querystring: z.object({
         q: z.string().min(1),
         type: z.enum(["all", "books", "users"]).default("all"),
-        page: z.number().min(1).default(1),
-        limit: z.number().min(1).max(50).default(20),
+        page: z.string().transform(Number).pipe(z.number().min(1)).default(1),
+        limit: z.string().transform(Number).pipe(z.number().max(50)).default(20),
       }),
     },
     handler: async (request, reply) => {

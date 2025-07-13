@@ -9,8 +9,8 @@ export default async function bookRoutes(server: FastifyInstance) {
     schema: {
       querystring: z.object({
         q: z.string().min(1),
-        startIndex: z.number().min(0).default(0),
-        maxResults: z.number().min(1).max(40).default(20),
+        startIndex: z.string().transform(Number).pipe(z.number().min(0)).default(0),
+        maxResults: z.string().transform(Number).pipe(z.number().min(1).max(40)).default(20),
         orderBy: z.enum(["relevance", "newest"]).default("relevance"),
         filter: z.string().optional(),
         langRestrict: z.string().optional(),
@@ -53,7 +53,7 @@ export default async function bookRoutes(server: FastifyInstance) {
     schema: {
       querystring: z.object({
         category: z.string().optional(),
-        limit: z.number().min(1).max(50).default(20),
+        limit: z.string().transform(Number).pipe(z.number().min(1).max(50)).default(20),
       }),
     },
     handler: async (request, reply) => {
@@ -72,7 +72,7 @@ export default async function bookRoutes(server: FastifyInstance) {
     schema: {
       querystring: z.object({
         category: z.string().optional(),
-        limit: z.number().min(1).max(50).default(20),
+        limit: z.string().transform(Number).pipe(z.number().min(1).max(50)).default(20),
       }),
     },
     handler: async (request, reply) => {
@@ -91,7 +91,7 @@ export default async function bookRoutes(server: FastifyInstance) {
     preHandler: requireAuth,
     schema: {
       querystring: z.object({
-        limit: z.number().min(1).max(50).default(20),
+        limit: z.string().transform(Number).pipe(z.number().min(1).max(50)).default(20),
       }),
     },
     handler: async (request, reply) => {

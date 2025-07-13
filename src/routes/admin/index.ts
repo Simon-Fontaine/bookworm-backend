@@ -149,7 +149,7 @@ export default async function adminRoutes(server: FastifyInstance) {
     schema: {
       body: z.object({
         action: z.enum(["add", "remove"]),
-        role: z.nativeEnum(Role),
+        role: z.enum(Role),
       }),
     },
     handler: async (request, reply) => {

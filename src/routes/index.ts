@@ -1,10 +1,13 @@
 // Import all route modules
 import adminRoutes from "./admin";
+import analyticsRoutes from "./analytics";
 import authRoutes from "./auth";
+import bookClubRoutes from "./book-clubs";
 import bookRoutes from "./books";
 import boxRoutes from "./boxes";
 import goalRoutes from "./goals";
 import libraryRoutes from "./library";
+import notificationRoutes from "./notifications";
 import searchRoutes from "./search";
 import socialRoutes from "./social";
 import userRoutes from "./users";
@@ -21,4 +24,7 @@ export async function registerRoutes(server: FastifyInstance) {
   await server.register(boxRoutes, { prefix: "/api/v1/boxes" });
   await server.register(socialRoutes, { prefix: "/api/v1/social" });
   await server.register(searchRoutes, { prefix: "/api/v1/search" });
+  await server.register(notificationRoutes, { prefix: "/api/v1/notifications" });
+  await server.register(bookClubRoutes, { prefix: "/api/v1/book-clubs" });
+  await server.register(analyticsRoutes, { prefix: "/api/v1/analytics" });
 }

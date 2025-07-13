@@ -216,7 +216,7 @@ export default async function authRoutes(server: FastifyInstance) {
   server.post("/forgot-password", {
     schema: {
       body: z.object({
-        email: z.string().email(),
+        email: z.email(),
       }),
     },
     handler: async (request, reply) => {

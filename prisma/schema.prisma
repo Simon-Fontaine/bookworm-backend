@@ -7,9 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
+// Enums
+enum NotificationType {
+  READING_REMINDER
+  GOAL_PROGRESS
+  GOAL_ACHIEVED
+  NEW_FOLLOWER
+  BOOK_RECOMMENDATION
+  BOOK_CLUB_INVITE
+  BOOK_CLUB_DISCUSSION
+  BOOK_CLUB_NEW_READING
+  WEEKLY_DIGEST
+  ACHIEVEMENT_UNLOCKED
+}
+
+enum BookClubRole {
   ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
+enum DiscussionType {
+  GENERAL
+  BOOK_DISCUSSION
+  SPOILER_FREE
+  SPOILER_DISCUSSION
+  POLL
+  ANNOUNCEMENT
+}
+
+enum Role {
+  ADMIN
+  MODERATOR
+  USER
 }
 
 enum ListType {
@@ -50,17 +87,75 @@ model User {
   updatedAt       DateTime @updatedAt
 
   // Relations
-  sessions      Session[]
-  verifications Verification[]
-  books         UserBook[]
-  goals         ReadingGoal[]
-  boxes         BookBox[]
-  reviews       Review[]
-  followers     Follow[]       @relation("UserFollowers")
-  following     Follow[]       @relation("UserFollowing")
-  boxActivities BoxActivity[]
+  sessions                  Session[]
+  verifications             Verification[]
+  books                     UserBook[]
+  goals                     ReadingGoal[]
+  boxes                     BookBox[]
+  reviews                   Review[]
+  followers                 Follow[]                  @relation("UserFollowers")
+  following                 Follow[]                  @relation("UserFollowing")
+  boxActivities             BoxActivity[]
+  notifications             Notification[]
+  notificationSettings      NotificationSettings?
+  pushTokens                PushToken[]
+  createdBookClubs          BookClub[]
+  bookClubMemberships       BookClubMember[]
+  bookClubInvites           BookClubMember[]          @relation("BookClubInviter")
+  bookClubDiscussions       BookClubDiscussion[]
+  bookClubDiscussionReplies BookClubDiscussionReply[]
+  bookClubReadingProgress   BookClubReadingProgress[]
+  readingSessions           ReadingSession[]
+  insights                  UserInsight[]
 
   @@map("users")
+}
+
+// Notifications
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      NotificationType
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationSettings {
+  id                    String  @id @default(uuid())
+  userId                String  @unique
+  emailNotifications    Boolean @default(true)
+  pushNotifications     Boolean @default(true)
+  readingReminders      Boolean @default(true)
+  goalReminders         Boolean @default(true)
+  socialNotifications   Boolean @default(true)
+  bookClubNotifications Boolean @default(true)
+  weeklyDigest          Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String // 'ios', 'android', 'web'
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
 }
 
 model Session {
@@ -115,10 +210,12 @@ model Book {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  users         UserBook[]
-  boxBooks      BoxBook[]
-  reviews       Review[]
-  boxActivities BoxActivity[]
+  users            UserBook[]
+  boxBooks         BoxBook[]
+  reviews          Review[]
+  boxActivities    BoxActivity[]
+  bookClubReadings BookClubReading[]
+  readingSessions  ReadingSession[]
 
   @@map("books")
 }
@@ -251,4 +348,150 @@ model Follow {
 
   @@unique([followerId, followingId])
   @@map("follows")
+}
+
+// Book Clubs
+model BookClub {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  inviteCode  String?  @unique
+  creatorId   String
+  memberLimit Int?
+  imageUrl    String?
+  rules       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator     User                 @relation(fields: [creatorId], references: [id])
+  members     BookClubMember[]
+  discussions BookClubDiscussion[]
+  readings    BookClubReading[]
+
+  @@map("book_clubs")
+}
+
+model BookClubMember {
+  id         String           @id @default(uuid())
+  clubId     String
+  userId     String
+  role       BookClubRole     @default(MEMBER)
+  status     MembershipStatus @default(ACTIVE)
+  joinedAt   DateTime         @default(now())
+  invitedBy  String?
+  isApproved Boolean          @default(true)
+
+  club          BookClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invitedByUser User?    @relation("BookClubInviter", fields: [invitedBy], references: [id])
+
+  @@unique([clubId, userId])
+  @@map("book_club_members")
+}
+
+model BookClubReading {
+  id          String   @id @default(uuid())
+  clubId      String
+  bookId      String
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  club        BookClub                  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  book        Book                      @relation(fields: [bookId], references: [id])
+  discussions BookClubDiscussion[]
+  progress    BookClubReadingProgress[]
+
+  @@map("book_club_readings")
+}
+
+model BookClubDiscussion {
+  id             String         @id @default(uuid())
+  clubId         String
+  readingId      String?
+  title          String
+  content        String
+  authorId       String
+  isPinned       Boolean        @default(false)
+  isLocked       Boolean        @default(false)
+  discussionType DiscussionType @default(GENERAL)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  club    BookClub                  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  reading BookClubReading?          @relation(fields: [readingId], references: [id])
+  author  User                      @relation(fields: [authorId], references: [id])
+  replies BookClubDiscussionReply[]
+
+  @@map("book_club_discussions")
+}
+
+model BookClubDiscussionReply {
+  id           String   @id @default(uuid())
+  discussionId String
+  authorId     String
+  content      String
+  parentId     String? // For nested replies
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  discussion BookClubDiscussion        @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  author     User                      @relation(fields: [authorId], references: [id])
+  parent     BookClubDiscussionReply?  @relation("ReplyToReply", fields: [parentId], references: [id])
+  replies    BookClubDiscussionReply[] @relation("ReplyToReply")
+
+  @@map("book_club_discussion_replies")
+}
+
+model BookClubReadingProgress {
+  id          String    @id @default(uuid())
+  readingId   String
+  userId      String
+  currentPage Int       @default(0)
+  progress    Float     @default(0) // percentage
+  isFinished  Boolean   @default(false)
+  finishedAt  DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  reading BookClubReading @relation(fields: [readingId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([readingId, userId])
+  @@map("book_club_reading_progress")
+}
+
+// Analytics
+model ReadingSession {
+  id        String    @id @default(uuid())
+  userId    String
+  bookId    String
+  startTime DateTime
+  endTime   DateTime?
+  pages     Int?
+  duration  Int? // in minutes
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id])
+
+  @@map("reading_sessions")
+}
+
+model UserInsight {
+  id          String   @id @default(uuid())
+  userId      String
+  insightType String // 'reading_velocity', 'genre_preference', etc.
+  data        Json
+  generatedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_insights")
 }
