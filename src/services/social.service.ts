@@ -52,6 +52,55 @@ export class SocialService {
   }
 
   /**
+   * Check follow status between users
+   */
+  async checkFollowStatus(followerId: string, followingId: string): Promise<Follow | null> {
+    return prisma.follow.findUnique({
+      where: {
+        followerId_followingId: { followerId, followingId },
+      },
+    });
+  }
+
+  /**
+   * Get user's social stats
+   */
+  async getUserSocialStats(userId: string): Promise<{
+    followersCount: number;
+    followingCount: number;
+    reviewsCount: number;
+    averageRating: number;
+  }> {
+    const cacheKey = `social:${userId}:stats`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const [followersCount, followingCount, reviewStats] = await Promise.all([
+      prisma.follow.count({ where: { followingId: userId } }),
+      prisma.follow.count({ where: { followerId: userId } }),
+      prisma.review.aggregate({
+        where: { userId },
+        _count: true,
+        _avg: { rating: true },
+      }),
+    ]);
+
+    const stats = {
+      followersCount,
+      followingCount,
+      reviewsCount: reviewStats._count,
+      averageRating: reviewStats._avg.rating || 0,
+    };
+
+    // Cache for 5 minutes
+    await redis.setex(cacheKey, 300, JSON.stringify(stats));
+
+    return stats;
+  }
+
+  /**
    * Get user's followers
    */
   async getFollowers(
@@ -76,6 +125,8 @@ export class SocialService {
               displayName: true,
               avatarUrl: true,
               bio: true,
+              location: true,
+              createdAt: true,
             },
           },
         },
@@ -119,6 +170,8 @@ export class SocialService {
               displayName: true,
               avatarUrl: true,
               bio: true,
+              location: true,
+              createdAt: true,
             },
           },
         },
@@ -164,7 +217,70 @@ export class SocialService {
     // Update book's average rating
     await this.updateBookRating(bookId);
 
+    // Clear user's social cache
+    await this.clearSocialCache(userId);
+
     return review;
+  }
+
+  /**
+   * Get book reviews
+   */
+  async getBookReviews(
+    bookId: string,
+    options: { page?: number; limit?: number; userId?: string } = {},
+  ): Promise<{
+    reviews: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+    userReview?: Review | null;
+  }> {
+    const { page = 1, limit = 20, userId } = options;
+
+    const [reviews, total, userReview] = await Promise.all([
+      prisma.review.findMany({
+        where: {
+          bookId,
+          isPublic: true,
+          userId: userId ? { not: userId } : undefined, // Exclude user's own review from list
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.review.count({
+        where: {
+          bookId,
+          isPublic: true,
+          userId: userId ? { not: userId } : undefined,
+        },
+      }),
+      // Get user's own review separately if userId provided
+      userId
+        ? prisma.review.findUnique({
+            where: { userId_bookId: { userId, bookId } },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      reviews,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      userReview,
+    };
   }
 
   /**
@@ -184,6 +300,10 @@ export class SocialService {
 
     const followingIds = following.map((f) => f.followingId);
     followingIds.push(userId); // Include own activities
+
+    if (followingIds.length === 0) {
+      return [];
+    }
 
     // Get recent activities from followed users
     const activities = await prisma.$queryRaw<any[]>`
@@ -300,11 +420,97 @@ export class SocialService {
   }
 
   /**
+   * Get user's reading activity for profile
+   */
+  async getUserReadingActivity(userId: string, options: { limit?: number } = {}): Promise<any[]> {
+    const { limit = 10 } = options;
+
+    return prisma.userBook.findMany({
+      where: {
+        userId,
+        isPublic: true,
+      },
+      include: {
+        book: {
+          select: {
+            id: true,
+            title: true,
+            authors: true,
+            thumbnailUrl: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    });
+  }
+
+  /**
+   * Get mutual followers between two users
+   */
+  async getMutualFollowers(userId1: string, userId2: string): Promise<User[]> {
+    const mutualFollowers = await prisma.$queryRaw<any[]>`
+      SELECT DISTINCT u.id, u.username, u."displayName", u."avatarUrl"
+      FROM users u
+      JOIN follows f1 ON u.id = f1."followingId" AND f1."followerId" = ${userId1}
+      JOIN follows f2 ON u.id = f2."followingId" AND f2."followerId" = ${userId2}
+      WHERE u.id != ${userId1} AND u.id != ${userId2}
+      LIMIT 10
+    `;
+
+    return mutualFollowers;
+  }
+
+  /**
+   * Get reading compatibility score between users
+   */
+  async getReadingCompatibility(
+    userId1: string,
+    userId2: string,
+  ): Promise<{
+    score: number;
+    commonBooks: number;
+    commonGenres: string[];
+  }> {
+    // Get common books
+    const commonBooks = await prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(DISTINCT b.id)::int as count
+      FROM books b
+      JOIN user_books ub1 ON b.id = ub1."bookId" AND ub1."userId" = ${userId1}
+      JOIN user_books ub2 ON b.id = ub2."bookId" AND ub2."userId" = ${userId2}
+    `;
+
+    // Get common genres
+    const commonGenres = await prisma.$queryRaw<{ genre: string }[]>`
+      SELECT DISTINCT unnest(b.categories) as genre
+      FROM books b
+      JOIN user_books ub1 ON b.id = ub1."bookId" AND ub1."userId" = ${userId1}
+      JOIN user_books ub2 ON b.id = ub2."bookId" AND ub2."userId" = ${userId2}
+      WHERE array_length(b.categories, 1) > 0
+      LIMIT 10
+    `;
+
+    const commonBooksCount = commonBooks[0]?.count || 0;
+    const commonGenresList = commonGenres.map((g) => g.genre);
+
+    // Calculate compatibility score (0-100)
+    const bookScore = Math.min(commonBooksCount * 10, 60); // Max 60 points for books
+    const genreScore = Math.min(commonGenresList.length * 5, 40); // Max 40 points for genres
+    const score = Math.min(bookScore + genreScore, 100);
+
+    return {
+      score,
+      commonBooks: commonBooksCount,
+      commonGenres: commonGenresList,
+    };
+  }
+
+  /**
    * Update book rating based on reviews
    */
   private async updateBookRating(bookId: string): Promise<void> {
     const result = await prisma.review.aggregate({
-      where: { bookId },
+      where: { bookId, isPublic: true },
       _avg: { rating: true },
       _count: true,
     });
@@ -325,6 +531,26 @@ export class SocialService {
     const keys = await redis.keys(`social:${userId}:*`);
     if (keys.length > 0) {
       await redis.del(...keys);
+    }
+  }
+
+  /**
+   * Get service health status
+   */
+  async getServiceHealth(): Promise<{ status: "healthy" | "unhealthy"; error?: string }> {
+    try {
+      // Test database connection
+      await prisma.user.count();
+
+      // Test Redis connection
+      await redis.ping();
+
+      return { status: "healthy" };
+    } catch (error: any) {
+      return {
+        status: "unhealthy",
+        error: error.message || "Social service error",
+      };
     }
   }
 }

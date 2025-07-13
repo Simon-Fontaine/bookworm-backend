@@ -18,6 +18,7 @@ generated
 *.db
 *.sqlite
 *.sqlite3
+migrations
 
 # Logs
 logs

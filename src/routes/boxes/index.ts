@@ -52,6 +52,36 @@ export default async function boxRoutes(server: FastifyInstance) {
     },
   });
 
+  // Search book boxes
+  server.get("/search", {
+    schema: {
+      querystring: z.object({
+        q: z.string().min(1),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+        radius: z.number().min(0.1).max(100).default(50),
+        page: z.number().min(1).default(1),
+        limit: z.number().min(1).max(50).default(20),
+      }),
+    },
+    handler: async (request, reply) => {
+      const { q, latitude, longitude, radius, page, limit } = request.query as any;
+
+      const results = await boxService.searchBoxes(q, {
+        latitude,
+        longitude,
+        radius,
+        page,
+        limit,
+      });
+
+      return reply.send({
+        success: true,
+        data: results,
+      });
+    },
+  });
+
   // Get box details
   server.get("/:boxId", {
     handler: async (request, reply) => {

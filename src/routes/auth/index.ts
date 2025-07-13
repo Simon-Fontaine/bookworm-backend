@@ -95,9 +95,53 @@ export default async function authRoutes(server: FastifyInstance) {
   server.get("/me", {
     preHandler: requireAuth,
     handler: async (request, reply) => {
+      const needsOnboarding = await authService.needsOnboarding(request.user.id);
+
       return reply.send({
         success: true,
-        data: { user: request.user },
+        data: {
+          user: request.user,
+          needsOnboarding,
+        },
+      });
+    },
+  });
+
+  // Complete onboarding (profile setup)
+  server.post("/complete-onboarding", {
+    preHandler: requireAuth,
+    schema: {
+      body: z.object({
+        username: z
+          .string()
+          .min(3)
+          .max(48)
+          .regex(/^[a-z0-9_]+$/),
+        displayName: z.string().min(1).max(48).optional(),
+        fullName: z.string().min(1).max(100).optional(),
+        bio: z.string().max(500).optional(),
+        location: z.string().max(100).optional(),
+      }),
+    },
+    handler: async (request, reply) => {
+      const data = request.body as any;
+
+      // Check if username is available
+      const existingUser = await authService.getUserByUsername(data.username);
+      if (existingUser && existingUser.id !== request.user.id) {
+        return reply.status(400).send({
+          success: false,
+          error: "Username already taken",
+          code: "USERNAME_EXISTS",
+        });
+      }
+
+      const user = await authService.updateProfile(request.user.id, data);
+
+      return reply.send({
+        success: true,
+        data: { user },
+        message: "Profile setup completed",
       });
     },
   });

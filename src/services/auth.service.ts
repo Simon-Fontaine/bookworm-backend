@@ -617,6 +617,21 @@ export class AuthService {
   }
 
   /**
+   * Get user by username (sanitized)
+   */
+  async getUserByUsername(username: string): Promise<Omit<User, "password"> | null> {
+    const user = await prisma.user.findUnique({
+      where: { username: username.toLowerCase().trim() },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return this.sanitizeUser(user);
+  }
+
+  /**
    * Get user by email (sanitized)
    */
   async getUserByEmail(email: string): Promise<Omit<User, "password"> | null> {
@@ -629,6 +644,78 @@ export class AuthService {
     }
 
     return this.sanitizeUser(user);
+  }
+
+  /**
+   * Get comprehensive user profile with stats
+   */
+  async getUserProfileByUsername(username: string): Promise<{
+    user: Omit<User, "password">;
+    stats: {
+      followersCount: number;
+      followingCount: number;
+      booksCount: number;
+      reviewsCount: number;
+    };
+  } | null> {
+    const user = await prisma.user.findUnique({
+      where: { username: username.toLowerCase().trim() },
+      include: {
+        _count: {
+          select: {
+            followers: true,
+            following: true,
+            books: true,
+            reviews: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    const { _count, ...userData } = user;
+
+    return {
+      user: this.sanitizeUser(userData),
+      stats: {
+        followersCount: _count.followers,
+        followingCount: _count.following,
+        booksCount: _count.books,
+        reviewsCount: _count.reviews,
+      },
+    };
+  }
+
+  /**
+   * Check if user needs onboarding
+   */
+  async needsOnboarding(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, displayName: true },
+    });
+
+    // User needs onboarding if they don't have a proper username or display name
+    return !user || !user.username || !user.displayName;
+  }
+
+  /**
+   * Bulk user lookup for social features
+   */
+  async getUsersByIds(userIds: string[]): Promise<Map<string, Omit<User, "password">>> {
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+    });
+
+    const userMap = new Map<string, Omit<User, "password">>();
+    users.forEach((user) => {
+      userMap.set(user.id, this.sanitizeUser(user));
+    });
+
+    return userMap;
   }
 
   /**

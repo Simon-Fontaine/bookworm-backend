@@ -58,6 +58,7 @@ model User {
   reviews       Review[]
   followers     Follow[]       @relation("UserFollowers")
   following     Follow[]       @relation("UserFollowing")
+  boxActivities BoxActivity[]
 
   @@map("users")
 }
@@ -114,9 +115,10 @@ model Book {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  users    UserBook[]
-  boxBooks BoxBook[]
-  reviews  Review[]
+  users         UserBook[]
+  boxBooks      BoxBook[]
+  reviews       Review[]
+  boxActivities BoxActivity[]
 
   @@map("books")
 }
@@ -213,7 +215,9 @@ model BoxActivity {
   metadata     Json?
   createdAt    DateTime @default(now())
 
-  box BookBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+  box  BookBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book?   @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
   @@map("box_activities")
 }

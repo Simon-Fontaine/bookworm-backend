@@ -1,11 +1,12 @@
-import { requireAuth } from "../../middleware/auth.middleware";
+import { optionalAuth, requireAuth } from "../../middleware/auth.middleware";
 import { authService } from "../../services/auth.service";
+import { socialService } from "../../services/social.service";
 import { UpdateProfileSchema } from "../../validators";
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 export default async function userRoutes(server: FastifyInstance) {
-  // Get user profile
+  // Get user profile by ID
   server.get("/:userId", {
     handler: async (request, reply) => {
       const { userId } = request.params as { userId: string };
@@ -21,6 +22,37 @@ export default async function userRoutes(server: FastifyInstance) {
       return reply.send({
         success: true,
         data: { user },
+      });
+    },
+  });
+
+  // Get detailed user profile by username (public view)
+  server.get("/:username/profile", {
+    preHandler: optionalAuth,
+    handler: async (request, reply) => {
+      const { username } = request.params as { username: string };
+
+      const profile = await authService.getUserProfileByUsername(username);
+      if (!profile) {
+        return reply.status(404).send({
+          success: false,
+          error: "User not found",
+        });
+      }
+
+      // Check if current user follows this user
+      let isFollowing = false;
+      if (request.user) {
+        const follow = await socialService.checkFollowStatus(request.user.id, profile.user.id);
+        isFollowing = !!follow;
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          ...profile,
+          isFollowing,
+        },
       });
     },
   });
